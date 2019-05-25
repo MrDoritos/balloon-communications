@@ -385,6 +385,10 @@ struct serialPacket {
 			int d = 0;
 			return send(d, 0);
 		}
+		virtual int receivePacket() {
+			return receive();
+		}
+		virtual void serialize(std::ofstream stream, int type) = 0;
 	protected:
 		serialPacket(serialClient& client, short type) {
 			this->type = type;
@@ -418,7 +422,7 @@ struct serialPacket {
 			this->dataLength = dataLength;
 		}
 		
-		int recieveData(char* buffer, int length) {
+		int receiveData(char* buffer, int length) {
 			if (!dataAvailable)
 				return 0;
 		
@@ -431,13 +435,14 @@ struct serialPacket {
 			}
 			return count;
 		}
-		
-		private:
-		serialClient* client;
+		protected:
 		bool dataAvailable;
 		int dataLeft;
 		short type;
 		int dataLength;
+		
+		private:
+		serialClient* client;
 		long time;
 		
 };
