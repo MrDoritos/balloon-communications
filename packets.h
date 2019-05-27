@@ -1,7 +1,12 @@
 #pragma once
 #include "serialClient.h"
+#if defined __linux__ || defined _WIN32
 #include <time.h>
 #include <fstream>
+#endif
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #define FILE_CSV 0b0010
 #define FILE_TSV 0b0001
 #define FILE_BINARY 0b0100
@@ -13,23 +18,30 @@ class timeSync :
 		serialPacket(client, SYNC_TIME) {
 		
 	}
-	void serialize(std::ofstream file, int type) {
-	
+	long translate(long time) {
+		return time - this->syncMillis;
 	}
-	long time;
 	#if defined __linux__ || defined _WIN32
+	void serialize(std::ofstream file, int type) {
+		/* Don't want to write time syncs to file */
+	}
+	#endif
+	long syncMillis;
+	#if defined __linux__ || defined _WIN32
+	time_t syncTime;
 	int receivePacket() override {
 		int i = receive();
 		if (!dataAvailable)
 			return GENERAL_ERROR;
 		if (dataLeft != 8)
 			return GENERAL_ERROR;
-		receiveData((char*)&time, 8);
+		receiveData((char*)&syncMillis, 8);
+		time(&syncTime);
 	}
 	#endif
 	#if defined(__AVR_ATmega328P__)
-	int send() override {
-		send(millis(), 8);
+	int send(long mill) override {
+		((serialPacket*)this)->send(millis(), mill);
 	}
 	#endif
 };
@@ -37,31 +49,83 @@ class timeSync :
 class tempSensor :
 	public serialPacket {
 	public:
-	tempSensor(serialClient& client, int id) :
+	tempSensor(serialClient& client, int id, timeSync& ts) :
 		serialPacket(client, TEMP_SENSOR | id) {
-		
+		this->num = id;
+		this->ts = &ts;
 	}
+	#if defined __linux__ || defined _WIN32
+	void serialize(std::ofstream file, int type) {
+		if ((type & FILE_TSV) == FILE_TSV) {
+			std::string f;
+			char buf[256];
+			memset(&buf[0], '\0', 256);
+			sprintf(&buf[0], "TEMP %i,%l,%d\n", this->num, this->ts->translate(mtime), this->tempurature);
+			file << f;
+		}
+	}
+	#endif
 	double tempurature;
-	int send() override {
-		
+	#if defined(__AVR_ATmega328P__)
+	int send(long millis) override {
+		((serialPacket*)this)->send(tempurature, millis);
 	}
+	#endif
+	#if defined __linux__ || defined _WIN32
+	int receivePacket() override {
+		int i = receive();
+		if (!dataAvailable)
+			return GENERAL_ERROR;
+		if (dataLeft != 8)
+			return GENERAL_ERROR;
+		receiveData((char*)&tempurature, 8);
+	}
+	#endif
 	protected:
 	
 	private:
-	
+	int num;
+	timeSync* ts;
 };
 
 class uvSensor :
 	public serialPacket {
 	public:
-	uvSensor(serialClient& client, int id) :
+	uvSensor(serialClient& client, int id, timeSync& ts) :
 		serialPacket(client, UV_SENSOR | id) {
-		
+		this->num = id;
+		this->ts = &ts;
 	}
+	int num;
+	#if defined __linux__ || defined _WIN32
+	void serialize(std::ofstream file, int type) {
+		if ((type & FILE_TSV) == FILE_TSV) {
+			std::string f;
+			char buf[256];
+			memset(&buf[0], '\0', 256);
+			sprintf(&buf[0], "UV %i\t%l\t%d\n", this->num, this->ts->translate(mtime), this->value);
+			file << f;
+		}
+	}
+	#endif
+	#if defined __linux__ || defined _WIN32
+	int receivePacket() override {
+		int i = receive();
+		if (!dataAvailable)
+			return GENERAL_ERROR;
+		if (dataLeft != 8)
+			return GENERAL_ERROR;
+		receiveData((char*)&value, 8);
+	}
+	#endif
 	double value;
-	int send() override {
-	
+	#if defined(__AVR_ATmega328P__)
+	int send(long millis) override {
+		((serialPacket*)this)->send(value, millis);
 	}
+	#endif
+	private:
+	timeSync* ts;
 };
 
 //#define SaveAs(idd, xyzw) (((xyzw & idd) == xyzw))

@@ -189,7 +189,7 @@ int send(void* buffer, int length) {
 #if defined(__AVR_ATmega328P__)
 if (!Serial)
 	return DISCONNECTED;
-Serial.write(buffer, length);
+Serial.write((uint8_t*)buffer, length);
 #elif __linux__
 write(fd, buffer, length);
 #elif _WIN32
@@ -381,47 +381,59 @@ bool begin(int baud, char* port);
 
 struct serialPacket {
 	public:
-		virtual int send() {
+		#if defined (__AVR_ATmega328P__)
+		virtual int send(long millis) {
 			int d = 0;
-			return send(d, 0);
+			return send(d, millis);
 		}
+		#endif
+		#if defined __linux__ || defined _WIN32
 		virtual int receivePacket() {
 			return receive();
 		}
+		#endif
+		#if defined __linux__ || defined _WIN32
 		virtual void serialize(std::ofstream stream, int type) = 0;
-	protected:
+		#endif
+	public:
 		serialPacket(serialClient& client, short type) {
 			this->type = type;
-			this->time = 0;
+			this->mtime = 0;
 			this->dataLength = 0;
 			this->client = &client;
 		}
 		
+		//#if defined (__AVR_ATmega328P__)
 		template<typename T>
-		int send(T data, long time) {
+		int send(T data, long mtime) {
 			dataLength = sizeof(T);
-			this->time = time;
+			this->mtime = mtime;
 			client->send((char*)&type, 2);
-			client->send((char*)&time, 8);
+			client->send((char*)&mtime, 8);
 			client->send((char*)&dataLength, 4);
 			client->send((char*)&data, dataLength);
 		}
 		
+		//#endif
+		
+		#if defined __linux__ || defined _WIN32
 		int receive() {
 			short type;
 			client->recieve((char*)&type, 2);
-			long time;
-			client->recieve((char*)&time, 8);
+			long mtime;
+			client->recieve((char*)&mtime, 8);
 			int dataLength;
 			client->recieve((char*)&dataLength, 4);
 			this->dataLeft = dataLength;
 			if (this->dataLeft)
 				this->dataAvailable = true;
 			this->type = type;
-			this->time = time;
+			this->mtime = mtime;
 			this->dataLength = dataLength;
 		}
+		#endif
 		
+		#if defined __linux__ || defined _WIN32
 		int receiveData(char* buffer, int length) {
 			if (!dataAvailable)
 				return 0;
@@ -435,14 +447,16 @@ struct serialPacket {
 			}
 			return count;
 		}
+		#endif
+		
 		protected:
 		bool dataAvailable;
 		int dataLeft;
 		short type;
 		int dataLength;
+		long mtime;
 		
 		private:
 		serialClient* client;
-		long time;
 		
 };
